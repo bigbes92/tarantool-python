@@ -6,6 +6,7 @@ import sys
 
 from tarantool.const import *
 from tarantool.error import *
+from tarantool.types import *
 
 
 
@@ -79,7 +80,7 @@ class Response(list):
     packet received from the server.
     '''
 
-    def __init__(self, header, body, field_types=None):
+    def __init__(self, header, body, field_defs = None, default_type = None):
         '''\
         Create an instance of `Response` using data received from the server.
 
@@ -102,7 +103,8 @@ class Response(list):
         self._return_code = None
         self._return_message = None
         self._rowcount = None
-        self.field_types = field_types
+        self.field_defs = field_defs
+        self.default_type = default_type
 
         # Unpack header
         self._request_type, self._body_length, self._request_id  = struct_LLL.unpack(header)
@@ -199,10 +201,11 @@ class Response(list):
                 tuple_size = struct.unpack_from("<L", buff, offset)[0] + 4
                 tuple_data = struct.unpack_from("<%ds"%(tuple_size), buff, offset+4)[0]
                 tuple_value = self._unpack_tuple(tuple_data)
-                if self.field_types:
+                try:
                     self.append(self._cast_tuple(tuple_value))
-                else:
-                    self.append(tuple_value)
+                except Exception as e:
+                    print('Cannot cast tuple: %s. Please check schema declaration.'% str(e))
+                    raise
 
                 offset = offset + tuple_size + 4    # This '4' is a size of <size> attribute
 
@@ -270,10 +273,14 @@ class Response(list):
         :rtype: value of native python type (one of bytes, int, unicode (str for py3k))
         '''
 
-        if cast_to in (int, unicode):
-            return cast_to(value)
-        elif cast_to in (any, bytes):
+        if cast_to in (NUM, int):
+            return struct_L.unpack(value)
+        elif cast_to in (RAW, bytes, None):
             return value
+        elif cast_to in (STR, basestring):
+            return unicode(value)
+        elif cast_to in (NUM64, long):
+            return struct_Q.unpack(value)
         else:
             raise TypeError("Invalid field type %s"%(cast_to))
 
@@ -288,12 +295,16 @@ class Response(list):
         :return: converted tuple value
         :rtype: value of native python types (bytes, int, unicode (or str for py3k))
         '''
-        result = []
-        for i, value in enumerate(values):
-            if i < len(self.field_types):
-                result.append(self._cast_field(self.field_types[i], value))
-            else:
-                result.append(self._cast_field(self.field_types[-1], value))
+
+        if self.field_defs:
+            result = []
+            for field_no, value in enumerate(values):
+                (_name, dtype) = self.field_defs.get(field_no, (None, self.default_type))
+                result.append(self._cast_field(dtype, value))
+        elif self.default_type:
+            result = [self._cast_field(self.default_type, value) for value in values]
+        else:
+            result = values
 
         return tuple(result)
 

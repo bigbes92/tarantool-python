@@ -6,8 +6,9 @@ __version__ = "0.3.0"
 from tarantool.connection import Connection
 from tarantool.const import *
 from tarantool.error import *
+from tarantool.types import *
 
-def connect(host="localhost", port=33013):
+def connect(host="localhost", port=33013, schema=None):
     '''\
     Create a connection to the Tarantool server.
     
@@ -22,4 +23,5 @@ def connect(host="localhost", port=33013):
                       socket_timeout=SOCKET_TIMEOUT,
                       reconnect_max_attempts=RECONNECT_MAX_ATTEMPTS,
                       reconnect_delay=RECONNECT_DELAY,
-                      connect_now=True)
+                      connect_now=True,
+                      schema = schema)
